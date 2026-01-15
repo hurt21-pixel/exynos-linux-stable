@@ -5,70 +5,46 @@ on:
 
 jobs:
   build:
+    name: Build Kernel
     runs-on: ubuntu-latest
+
     steps:
     - name: Checkout source
       uses: actions/checkout@v3
 
-    - name: Setup dependencies
+    - name: Install dependencies
       run: |
         sudo apt update
-        sudo apt install -y bc bison flex libssl-dev make gcc clang python3 git zip lz4 cpio
+        sudo apt install -y \
+          bc bison flex libssl-dev make gcc clang python3 git zip lz4 cpio \
+          lld binutils-aarch64-linux-gnu
 
-    - name: Export toolchain
+    - name: Set up environment
       run: |
-        echo "ARCH=arm64" >> $GITHUB_ENV
-        echo "CROSS_COMPILE=aarch64-linux-gnu-" >> $GITHUB_ENV
-        echo "CC=clang" >> $GITHUB_ENV
-        echo "LD=ld.lld" >> $GITHUB_ENV
+        export ARCH=arm64
+        export SUBARCH=arm64
+        export CROSS_COMPILE=aarch64-linux-gnu-
+        export CLANG_TRIPLE=aarch64-linux-gnu-
+        export PATH=$PATH:/usr/bin
 
-    - name: Apply KernelSU Next
+    - name: Prepare defconfig
       run: |
-        git clone https://github.com/tiann/KernelSU.git
-        cp -r KernelSU/kernel drivers/kernelsu
-        echo "obj-y += kernelsu/" >> drivers/Makefile
-        echo "CONFIG_KSU=y" >> .config
+        cp .config .config
+        make olddefconfig
 
     - name: Build kernel
       run: |
-        make starlte_defconfig
-        make olddefconfig
         make -j$(nproc)
 
-    - name: Upload Image.gz-dtb
-      uses: actions/upload-artifact@v4
-      with:
-        name: kernel-output
-        path: arch/arm64/boot/Image.gz-dtb
-
-    - name: Repack boot.img
+    - name: Pack boot.img
       run: |
         mkdir -p out
-        git clone https://github.com/osm0sis/mkbootimg.git
-        chmod +x mkbootimg/mkbootimg.py
+        cp arch/arm64/boot/Image.gz out/
+        cp arch/arm64/boot/dts/exynos/*.dtb out/
+        cat out/Image.gz out/*.dtb > out/Image.gz-dtb
 
-        # Extract base boot.img (assumes you have boot/boot.img in repo)
-        mkdir bootimg
-        cd bootimg
-        ../mkbootimg/unpackbootimg.py ../boot/boot.img
-        cd ..
-
-        # Replace kernel
-        cp arch/arm64/boot/Image.gz-dtb bootimg/zImage
-
-        # Repack boot.img
-        mkbootimg/mkbootimg.py --kernel bootimg/zImage \
-          --ramdisk bootimg/ramdisk.gz \
-          --cmdline "$(cat bootimg/cmdline)" \
-          --base "$(cat bootimg/base)" \
-          --pagesize "$(cat bootimg/pagesize)" \
-          --kernel_offset "$(cat bootimg/kernel_offset)" \
-          --ramdisk_offset "$(cat bootimg/ramdisk_offset)" \
-          --tags_offset "$(cat bootimg/tags_offset)" \
-          -o out/boot.img
-
-    - name: Upload boot.img
-      uses: actions/upload-artifact@v4
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v3
       with:
-        name: boot-image
-        path: out/boot.img
+        name: kernel-build
+        path: out/Image.gz-dtb
