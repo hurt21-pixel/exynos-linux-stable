@@ -44,7 +44,7 @@ jobs:
         cat out/Image.gz out/*.dtb > out/Image.gz-dtb
 
     - name: Upload artifacts
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: kernel-build
         path: out/Image.gz-dtb
