@@ -17,61 +17,56 @@ jobs:
         sudo apt update
         sudo apt install -y \
           bc bison flex libssl-dev make gcc python3 git zip lz4 cpio \
-          lld binutils-aarch64-linux-gnu clang-14 llvm-14
+          lld-14 clang-14 llvm-14 binutils-aarch64-linux-gnu
 
     - name: Build kernel
       run: |
-        # Setup environment variables untuk step ini
-        export ARCH=arm64
-        export SUBARCH=arm64
-        export PATH="/usr/lib/llvm-14/bin:$PATH"
-        
-        # Mendefinisikan compiler menggunakan Clang 14
-        export CC=clang-14
-        export CLANG_TRIPLE=aarch64-linux-gnu-
-        export CROSS_COMPILE=aarch64-linux-gnu-
-        export LD=ld.lld-14
-        export AR=llvm-ar-14
-        export NM=llvm-nm-14
-        export OBJCOPY=llvm-objcopy-14
-        export OBJDUMP=llvm-objdump-14
-        export STRIP=llvm-strip-14
+        # Membuat folder output
+        mkdir -p out
 
-        # 1. Buat config dari defconfig
-        make O=out $ARCH\_defconfig
+        # Setup Path untuk Toolchain
+        export PATH="/usr/lib/llvm-14/bin:/usr/bin:$PATH"
         
-        # 2. Paksa isi default untuk fitur baru agar tidak 'Aborted'
-        make O=out olddefconfig
+        # Eksekusi Make Config (Langsung tembak nama filenya)
+        make O=out ARCH=arm64 starlte_defconfig
+        
+        # Paksa isi default untuk config baru
+        make O=out ARCH=arm64 olddefconfig
 
-        # 3. Proses Compile
+        # Proses Compile dengan Clang 14
+        # Kita pakai 'ld.lld' (tanpa -14) karena biasanya otomatis terlink setelah install lld-14
         make -j$(nproc) O=out \
-            CC=$CC \
-            LD=$LD \
-            AR=$AR \
-            NM=$NM \
-            OBJCOPY=$OBJCOPY \
-            OBJDUMP=$OBJDUMP \
-            STRIP=$STRIP \
-            CLANG_TRIPLE=$CLANG_TRIPLE \
-            CROSS_COMPILE=$CROSS_COMPILE
+            ARCH=arm64 \
+            CC=clang-14 \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            LD=ld.lld \
+            AR=llvm-ar-14 \
+            NM=llvm-nm-14 \
+            OBJCOPY=llvm-objcopy-14 \
+            OBJDUMP=llvm-objdump-14 \
+            STRIP=llvm-strip-14 \
+            LLVM=1 \
+            LLVM_IAS=1
 
     - name: Pack Image.gz-dtb
       run: |
         mkdir -p final_out
-        # Mengambil hasil build dari folder 'out'
         if [ -f out/arch/arm64/boot/Image.gz ]; then
           cp out/arch/arm64/boot/Image.gz final_out/
-          # Copy semua dtb jika ada
+          # Cari file .dtb dan gabungkan
           find out/arch/arm64/boot/dts/ -name "*.dtb" -exec cp {} final_out/ \;
           cd final_out
           cat Image.gz *.dtb > Image.gz-dtb
+          echo "Build Success!"
         else
-          echo "File Image.gz tidak ditemukan! Build mungkin gagal."
+          echo "Error: Image.gz tidak ditemukan!"
           exit 1
         fi
 
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: kernel-starlte
+        name: kernel-starlte-clang14
         path: final_out/Image.gz-dtb
+        
