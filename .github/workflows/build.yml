@@ -13,14 +13,14 @@ jobs:
     - name: Setup dependencies
       run: |
         sudo apt update
-        sudo apt install -y bc bison flex libssl-dev make gcc clang python3 git zip
+        sudo apt install -y bc bison flex libssl-dev make gcc clang python3 git zip lz4 cpio
 
     - name: Export toolchain
       run: |
-        export ARCH=arm64
-        export CROSS_COMPILE=aarch64-linux-gnu-
-        export CC=clang
-        export LD=ld.lld
+        echo "ARCH=arm64" >> $GITHUB_ENV
+        echo "CROSS_COMPILE=aarch64-linux-gnu-" >> $GITHUB_ENV
+        echo "CC=clang" >> $GITHUB_ENV
+        echo "LD=ld.lld" >> $GITHUB_ENV
 
     - name: Apply KernelSU Next
       run: |
@@ -36,7 +36,39 @@ jobs:
         make -j$(nproc)
 
     - name: Upload Image.gz-dtb
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: kernel-output
         path: arch/arm64/boot/Image.gz-dtb
+
+    - name: Repack boot.img
+      run: |
+        mkdir -p out
+        git clone https://github.com/osm0sis/mkbootimg.git
+        chmod +x mkbootimg/mkbootimg.py
+
+        # Extract base boot.img (assumes you have boot/boot.img in repo)
+        mkdir bootimg
+        cd bootimg
+        ../mkbootimg/unpackbootimg.py ../boot/boot.img
+        cd ..
+
+        # Replace kernel
+        cp arch/arm64/boot/Image.gz-dtb bootimg/zImage
+
+        # Repack boot.img
+        mkbootimg/mkbootimg.py --kernel bootimg/zImage \
+          --ramdisk bootimg/ramdisk.gz \
+          --cmdline "$(cat bootimg/cmdline)" \
+          --base "$(cat bootimg/base)" \
+          --pagesize "$(cat bootimg/pagesize)" \
+          --kernel_offset "$(cat bootimg/kernel_offset)" \
+          --ramdisk_offset "$(cat bootimg/ramdisk_offset)" \
+          --tags_offset "$(cat bootimg/tags_offset)" \
+          -o out/boot.img
+
+    - name: Upload boot.img
+      uses: actions/upload-artifact@v4
+      with:
+        name: boot-image
+        path: out/boot.img
