@@ -10,41 +10,68 @@ jobs:
 
     steps:
     - name: Checkout source
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
 
     - name: Install dependencies
       run: |
         sudo apt update
         sudo apt install -y \
-          bc bison flex libssl-dev make gcc clang python3 git zip lz4 cpio \
-          lld binutils-aarch64-linux-gnu
-
-    - name: Set up environment
-      run: |
-        export ARCH=arm64
-        export SUBARCH=arm64
-        export CROSS_COMPILE=aarch64-linux-gnu-
-        export CLANG_TRIPLE=aarch64-linux-gnu-
-        export PATH=$PATH:/usr/bin
-
-    - name: Prepare defconfig
-      run: |
-        make starlte_defconfig
-        yes "" | make olddefconfig
+          bc bison flex libssl-dev make gcc python3 git zip lz4 cpio \
+          lld binutils-aarch64-linux-gnu clang-14 llvm-14
 
     - name: Build kernel
       run: |
-        make -j$(nproc)
+        # Setup environment variables untuk step ini
+        export ARCH=arm64
+        export SUBARCH=arm64
+        export PATH="/usr/lib/llvm-14/bin:$PATH"
+        
+        # Mendefinisikan compiler menggunakan Clang 14
+        export CC=clang-14
+        export CLANG_TRIPLE=aarch64-linux-gnu-
+        export CROSS_COMPILE=aarch64-linux-gnu-
+        export LD=ld.lld-14
+        export AR=llvm-ar-14
+        export NM=llvm-nm-14
+        export OBJCOPY=llvm-objcopy-14
+        export OBJDUMP=llvm-objdump-14
+        export STRIP=llvm-strip-14
+
+        # 1. Buat config dari defconfig
+        make O=out $ARCH\_defconfig
+        
+        # 2. Paksa isi default untuk fitur baru agar tidak 'Aborted'
+        make O=out olddefconfig
+
+        # 3. Proses Compile
+        make -j$(nproc) O=out \
+            CC=$CC \
+            LD=$LD \
+            AR=$AR \
+            NM=$NM \
+            OBJCOPY=$OBJCOPY \
+            OBJDUMP=$OBJDUMP \
+            STRIP=$STRIP \
+            CLANG_TRIPLE=$CLANG_TRIPLE \
+            CROSS_COMPILE=$CROSS_COMPILE
 
     - name: Pack Image.gz-dtb
       run: |
-        mkdir -p out
-        cp arch/arm64/boot/Image.gz out/
-        cp arch/arm64/boot/dts/exynos/*.dtb out/
-        cat out/Image.gz out/*.dtb > out/Image.gz-dtb
+        mkdir -p final_out
+        # Mengambil hasil build dari folder 'out'
+        if [ -f out/arch/arm64/boot/Image.gz ]; then
+          cp out/arch/arm64/boot/Image.gz final_out/
+          # Copy semua dtb jika ada
+          find out/arch/arm64/boot/dts/ -name "*.dtb" -exec cp {} final_out/ \;
+          cd final_out
+          cat Image.gz *.dtb > Image.gz-dtb
+        else
+          echo "File Image.gz tidak ditemukan! Build mungkin gagal."
+          exit 1
+        fi
 
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: kernel-build
-        path: out/Image.gz-dtb
+        name: kernel-starlte
+        path: final_out/Image.gz-dtb
