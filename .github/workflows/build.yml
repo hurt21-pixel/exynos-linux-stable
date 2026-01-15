@@ -29,14 +29,14 @@ jobs:
 
     - name: Prepare defconfig
       run: |
-        cp .config .config
-        make olddefconfig
+        make starlte_defconfig
+        yes "" | make olddefconfig
 
     - name: Build kernel
       run: |
         make -j$(nproc)
 
-    - name: Pack boot.img
+    - name: Pack Image.gz-dtb
       run: |
         mkdir -p out
         cp arch/arm64/boot/Image.gz out/
