@@ -1,4 +1,4 @@
-name: Exynos Kernel Build Fixed
+name: Exynos Kernel Build Final
 
 on:
   workflow_dispatch:
@@ -21,12 +21,11 @@ jobs:
 
     - name: Build kernel
       run: |
-        # 1. Setup Path & Environment
+        # 1. Setup Folder & Environment
         mkdir -p out
         export PATH="/usr/lib/llvm-14/bin:/usr/bin:$PATH"
         
-        # 2. Definisikan Argumen Toolchain
-        # Menggunakan LD=ld.lld-14 dan memaksa LLVM=1
+        # 2. Definisikan Argumen Toolchain secara lengkap
         args="O=out \
               ARCH=arm64 \
               SUBARCH=arm64 \
@@ -42,14 +41,14 @@ jobs:
               LLVM=1 \
               LLVM_IAS=1"
 
-        # 3. Masukkan Config (Ganti starlte_defconfig jika namanya berbeda di repo)
+        # 3. Masukkan Config (Gunakan starlte_defconfig)
         make $args starlte_defconfig
         
-        # 4. SOLUSI UTAMA: Paksa semua opsi baru (NEW) jadi default agar tidak 'Aborted'
-        # Perintah 'olddefconfig' akan otomatis memilih default untuk opsi seperti LTTTLE_CPU_MASK
+        # 4. SOLUSI: Paksa semua opsi baru jadi default agar tidak macet (Aborted)
+        # Perintah ini akan otomatis mengisi opsi seperti LTTTLE_CPU_MASK
         make $args olddefconfig
 
-        # 5. Mulai Compile
+        # 5. Proses Compile
         make -j$(nproc) $args
 
     - name: Pack Image.gz-dtb
@@ -57,18 +56,20 @@ jobs:
         mkdir -p final_out
         if [ -f out/arch/arm64/boot/Image.gz ]; then
           cp out/arch/arm64/boot/Image.gz final_out/
+          # Mengumpulkan semua file .dtb
           find out/arch/arm64/boot/dts/ -name "*.dtb" -exec cp {} final_out/ \;
           cd final_out
+          # Menggabungkan kernel dan DTB
           cat Image.gz *.dtb > Image.gz-dtb
-          echo "Build Selesai!"
+          echo "Build Sukses!"
         else
           echo "Error: Image.gz tidak ditemukan!"
           exit 1
         fi
 
     - name: Upload artifacts
-      uses: symbols/upload-artifact@v4
+      uses: actions/upload-artifact@v4
       with:
-        name: kernel-build-result
+        name: kernel-starlte-result
         path: final_out/Image.gz-dtb
         
